@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Model Selection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f4f4f4;
+        }
+        h1 {
+            margin-top: 20px;
+        }
+        .container {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .model-card {
+            width: 200px;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0px 4px 8px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: transform 0.2s ease-in-out;
+        }
+        .model-card:hover {
+            transform: scale(1.05);
+        }
+        .model-card img {
+            width: 100%;
+            border-radius: 5px;
+        }
+        .model-card p {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Select a 3D Model to Visualize</h1>
+
+    <div class="container">
+        <div class="model-card" onclick="openViewer('arthrology')">
+            <img src="images/arthrology.jpg" alt="Arthrology Model">
+            <p>Skeloton System</p>
+        </div>
+
+        <div class="model-card" onclick="openViewer('angiology')">
+            <img src="images/angiology.jpg" alt="Angiology Model">
+            <p>Nervous System</p>
+        </div>
+
+        <div class="model-card" onclick="openViewer('muscular_insertions')">
+            <img src="images/muscular_insertions.jpg" alt="muscular insertions Model">
+            <p>Muscular System</p>
+        </div>
+        <div class="model-card" onclick="openViewer('circulatory')">
+            <img src="images/cir.jpg" alt="muscular insertions Model">
+            <p>Circulatory System</p>
+        </div>
+        <div class="model-card" onclick="openViewer('heart')">
+            <img src="images/heart.jpg" alt="muscular insertions Model">
+            <p>Heart</p>
+        </div>
+        <div class="model-card" onclick="openViewer('huma')">
+            <img src="images/huma.jpg" alt="muscular insertions Model">
+            <p>Muscular body</p>
+        </div>
+        <div class="model-card" onclick="openViewer('kidney')">
+            <img src="images/kidney.jpg" alt="muscular insertions Model">
+            <p>Kidney</p>
+        </div>
+        <div class="model-card" onclick="openViewer('liver_3')">
+            <img src="images/liver.jpg" alt="muscular insertions Model">
+            <p>Liver</p>
+        </div>
+        <div class="model-card" onclick="openViewer('realistic_human_lungs')">
+            <img src="images/lungs.jpg" alt="muscular insertions Model">
+            <p>Lungs</p>
+        </div>
+        <div class="model-card" onclick="openViewer('skin')">
+            <img src="images/skin.jpg" alt="muscular insertions Model">
+            <p>Skin</p>
+        </div>
+        <div class="model-card" onclick="openViewer('stomach')">
+            <img src="images/stomach.jpg" alt="muscular insertions Model">
+            <p>Stomach</p>
+        </div>
+    </div>
+
+    <script>
+        function openViewer(modelName) {
+            window.location.href = `viewer.html?model=${modelName}`;
+        }
+    </script>
+
+</body>
+</html>

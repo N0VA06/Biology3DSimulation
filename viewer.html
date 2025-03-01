@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Model Viewer with Hand Tracking</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        
+        #back-btn, #vr-mode-btn {
+            position: absolute;
+            top: 10px;
+            padding: 8px 15px;
+            background-color: #007BFF;
+            color: white;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+            z-index: 100;
+            border-radius: 5px;
+        }
+        
+        #back-btn { left: 10px; }
+        #vr-mode-btn { right: 10px; background-color: #FF5733; }
+        
+        #loading-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 18px;
+            z-index: 300;
+            display: none;
+        }
+        
+        #video-container {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 320px;
+            height: 240px;
+            border-radius: 5px;
+            border: 2px solid #FF5733;
+            overflow: hidden;
+            z-index: 200;
+            display: none;
+        }
+        
+        #video-feed {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        #info-panel {
+            position: absolute;
+            bottom: 260px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 202;
+            display: none;
+        }
+        
+        #hand-debug {
+            position: absolute;
+            top: 50px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            font-family: monospace;
+            z-index: 100;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <button id="back-btn" onclick="goBack()">⬅ Back</button>
+    <button id="vr-mode-btn" onclick="toggleVRMode()">🖐 VR Mode: OFF</button>
+    
+    <div id="loading-indicator">Loading...</div>
+    
+    <div id="video-container">
+        <img id="video-feed" alt="Hand tracking video">
+    </div>
+    
+    <div id="info-panel">Move your hand to control the model</div>
+    
+    <div id="hand-debug"></div>
+
+    <script>
+        // Three.js variables
+        let scene, camera, renderer, controls, loader, currentModel;
+        let vrMode = false;
+        
+        // Hand tracking variables
+        let isTrackingActive = false;
+        let handDataFetchInterval = null;
+        
+        // For smooth movement
+        let lastHandX = 0.5;
+        let lastHandY = 0.5;
+        let lastHandZ = 0.5;
+        let targetRotationX = 0;
+        let targetRotationY = 0;
+        let initialModelRotation = new THREE.Vector3();
+        
+        // Initialize the 3D scene
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111111);
+
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 2, 5);
+
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            document.body.appendChild(renderer.domElement);
+
+            // Create controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 1;
+            controls.maxDistance = 20;
+            controls.target.set(0, 1, 0);
+
+            // Add lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+            directionalLight.position.set(3, 10, 5);
+            scene.add(directionalLight);
+
+            // Load model
+            loader = new THREE.GLTFLoader();
+            const urlParams = new URLSearchParams(window.location.search);
+            const modelName = urlParams.get('model');
+
+            if (modelName) {
+                loadModel(modelName);
+            } else {
+                alert("No model selected!");
+                window.location.href = "index.html";
+            }
+
+            // Animation loop
+            function animate() {
+                requestAnimationFrame(animate);
+                
+                // If in VR mode, handle rotation independent of controls
+                if (isTrackingActive && currentModel) {
+                    // Model rotates based on hand position
+                    currentModel.rotation.y += (targetRotationY - currentModel.rotation.y) * 0.05;
+                    currentModel.rotation.x += (targetRotationX - currentModel.rotation.x) * 0.05;
+                } else {
+                    controls.update();
+                }
+                
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            // Handle window resize
+            window.addEventListener('resize', function () {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        function loadModel(modelName) {
+            if (currentModel) {
+                scene.remove(currentModel);
+            }
+
+            document.getElementById('loading-indicator').textContent = "Loading 3D model...";
+            document.getElementById('loading-indicator').style.display = 'block';
+
+            loader.load(`models/${modelName}/scene.gltf`, function (gltf) {
+                currentModel = gltf.scene;
+                
+                // Store initial rotation
+                initialModelRotation.set(
+                    currentModel.rotation.x,
+                    currentModel.rotation.y,
+                    currentModel.rotation.z
+                );
+                
+                // Center the model
+                const box = new THREE.Box3().setFromObject(currentModel);
+                const center = box.getCenter(new THREE.Vector3());
+                currentModel.position.sub(center);
+                
+                // Add to scene
+                scene.add(currentModel);
+                controls.target.set(0, 0, 0);
+                
+                document.getElementById('loading-indicator').style.display = 'none';
+            }, undefined, function (error) {
+                console.error("Error loading model:", error);
+                document.getElementById('loading-indicator').textContent = "Error loading model!";
+                setTimeout(() => {
+                    document.getElementById('loading-indicator').style.display = 'none';
+                }, 3000);
+            });
+        }
+
+        function goBack() {
+            stopHandTracking();
+            window.location.href = "index.html";
+        }
+
+        function toggleVRMode() {
+            vrMode = !vrMode;
+            document.getElementById("vr-mode-btn").innerText = vrMode ? "🖐 VR Mode: ON" : "🖱 VR Mode: OFF";
+
+            if (vrMode) {
+                startHandTracking();
+            } else {
+                stopHandTracking();
+            }
+        }
+        
+        // Start hand tracking mode
+        function startHandTracking() {
+            // Show loading indicator
+            document.getElementById('loading-indicator').textContent = "Starting hand tracking...";
+            document.getElementById('loading-indicator').style.display = 'block';
+            
+            // Disable orbit controls
+            controls.enabled = false;
+            
+            // Show video container and info panel
+            document.getElementById('video-container').style.display = 'block';
+            document.getElementById('info-panel').style.display = 'block';
+            document.getElementById('hand-debug').style.display = 'block';
+            
+            // Load video feed (which starts the Python camera)
+            const videoElement = document.getElementById('video-feed');
+            videoElement.src = "http://localhost:5050/video_feed?" + new Date().getTime();
+            
+            // Reset target rotations to current model rotation
+            if (currentModel) {
+                targetRotationX = currentModel.rotation.x;
+                targetRotationY = currentModel.rotation.y;
+            }
+            
+            // Start fetching hand data
+            isTrackingActive = true;
+            fetchHandData(); // Initial fetch
+            handDataFetchInterval = setInterval(fetchHandData, 50); // 20 updates per second
+            
+            // Hide loading indicator after short delay
+            setTimeout(() => {
+                document.getElementById('loading-indicator').style.display = 'none';
+            }, 1000);
+        }
+        
+        // Stop hand tracking mode
+        function stopHandTracking() {
+            // Stop fetching hand data
+            if (handDataFetchInterval) {
+                clearInterval(handDataFetchInterval);
+                handDataFetchInterval = null;
+            }
+            
+            // Stop the camera on the server
+            fetch('http://localhost:5050/stop_camera')
+                .then(response => response.json())
+                .then(data => console.log(data))
+                .catch(error => console.error('Error stopping camera:', error));
+            
+            // Hide video elements
+            document.getElementById('video-container').style.display = 'none';
+            document.getElementById('info-panel').style.display = 'none';
+            document.getElementById('hand-debug').style.display = 'none';
+            
+            // Re-enable orbit controls
+            controls.enabled = true;
+            
+            isTrackingActive = false;
+        }
+        
+        // Fetch hand tracking data from the server
+        function fetchHandData() {
+            if (!isTrackingActive) return;
+            
+            fetch('http://localhost:5050/hand_data')
+                .then(response => response.json())
+                .then(data => {
+                    // Update debug display
+                    document.getElementById('hand-debug').textContent = JSON.stringify(data, null, 2);
+                    
+                    // Update model based on hand data
+                    updateModelFromHandData(data);
+                })
+                .catch(error => {
+                    console.error('Error fetching hand data:', error);
+                    document.getElementById('hand-debug').textContent = "Error: Cannot connect to hand tracking server";
+                });
+        }
+        
+        // Update the 3D model based on hand tracking data
+        function updateModelFromHandData(handData) {
+            if (!currentModel) return;
+            
+            // Update info panel
+            if (handData.present) {
+                const fingerState = handData.fingers.map(f => f > 0 ? '✓' : '✗').join(' ');
+                document.getElementById('info-panel').innerHTML = 
+                    `Hand detected<br>` +
+                    `X: ${handData.x.toFixed(2)} Y: ${handData.y.toFixed(2)}<br>` +
+                    `Move left/right to rotate<br>` +
+                    `Move up/down to tilt<br>` +
+                    `Fingers: ${fingerState}`;
+                
+                // Apply smoothing to hand movement
+                lastHandX = lastHandX * 0.8 + handData.x * 0.2;
+                lastHandY = lastHandY * 0.8 + handData.y * 0.2;
+                lastHandZ = lastHandZ * 0.8 + handData.z * 0.2;
+                
+                // Map hand position to model rotation
+                // X is left-right (0-1), Y is up-down (0-1)
+                
+                // For Y rotation (left-right movement)
+                // Map x from 0-1 to -Math.PI to Math.PI
+                targetRotationY = (lastHandX - 0.5) * Math.PI * -4;
+                
+                // For X rotation (up-down movement)
+                // Map y from 0-1 to -Math.PI/4 to Math.PI/4
+                targetRotationX = (lastHandY - 0.5) * Math.PI * -1;
+                
+                // Zoom based on Z value (depth from camera)
+                // Z is usually negative, with more negative values being farther away
+                const zoomFactor = 3 + (1 - lastHandZ) * 6; // Map to range 3-9
+                camera.position.z += (zoomFactor - camera.position.z) * 0.05;
+                
+                // Check if all fingers are up for reset position
+                const allFingersUp = handData.fingers.every(f => f > 0);
+                if (allFingersUp) {
+                    // Reset model rotation
+                    targetRotationX = initialModelRotation.x;
+                    targetRotationY = initialModelRotation.y;
+                    camera.position.z = 5;
+                }
+                
+            } else {
+                document.getElementById('info-panel').textContent = 'Move your hand into view';
+            }
+        }
+        
+        // Initialize when page loads
+        window.onload = function() {
+            init();
+        };
+        
+        // Clean up when page unloads
+        window.onbeforeunload = function() {
+            if (isTrackingActive) {
+                stopHandTracking();
+            }
+        };
+    </script>
+</body>
+</html>
